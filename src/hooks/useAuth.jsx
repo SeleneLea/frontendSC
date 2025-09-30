@@ -1,57 +1,57 @@
-// src/hooks/useAuth.jsx
-
 import { createContext, useContext, useState, useEffect } from "react";
-import axios from "axios"; // 1. Importamos axios
+import axios from "axios";
 
 const AuthContext = createContext();
 
-// 2. Construimos la URL base de la API usando la variable de entorno
-const API_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
-
+// Usamos la variable de entorno que configuramos.
+const API_URL = import.meta.env.VITE_API_BASE_URL || "http://smart-condominium-backend-cg7l.onrender.com/api";
 
 export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null);
 
   useEffect(() => {
+    // Al cargar la app, revisa si hay un usuario y un token guardados
     const usuarioGuardado = localStorage.getItem("condominio_usuario");
-    if (usuarioGuardado) {
+    const tokenGuardado = localStorage.getItem("condominio_token");
+    if (usuarioGuardado && tokenGuardado) {
       setUsuario(JSON.parse(usuarioGuardado));
+      // Importante: Configura axios para que use el token en todas las futuras peticiones
+      axios.defaults.headers.common['Authorization'] = `Token ${tokenGuardado}`;
     }
   }, []);
 
-  // 3. Modificamos la función iniciarSesion
   const iniciarSesion = async (email, password) => {
     try {
-      // Hacemos una petición POST al backend
-      // NOTA: He asumido que la ruta es '/auth/login'.
-      // ¡Debes verificar esto! Podría ser '/login', '/usuarios/login', etc.
-      const respuesta = await axios.post(`${API_URL}/auth/login`, {
-        email: email,
+      const respuestaLogin = await axios.post(`${API_URL}/usuarios/login/`, {
+        username: email,
         password: password,
       });
 
-      // Si la petición es exitosa (código 200-299)
-      if (respuesta.data) {
-        // Asumimos que el backend devuelve el objeto del usuario y quizás un token
-        const datosUsuario = respuesta.data.user; // O como se llame el objeto de usuario en la respuesta
+      // Si la petición de login es exitosa, el backend nos devuelve un token
+      if (respuestaLogin.data.token) {
+        const token = respuestaLogin.data.token;
         
-        setUsuario(datosUsuario);
-        localStorage.setItem("condominio_usuario", JSON.stringify(datosUsuario));
+        // Guardamos el token en localStorage
+        localStorage.setItem("condominio_token", token);
         
-        // Si el backend devuelve un token, también lo guardamos
-        if (respuesta.data.token) {
-            localStorage.setItem("condominio_token", respuesta.data.token);
-            // Configuramos axios para que envíe este token en futuras peticiones
-            axios.defaults.headers.common['Authorization'] = `Bearer ${respuesta.data.token}`;
+        axios.defaults.headers.common['Authorization'] = `Token ${token}`;
+
+        // Hacemos una segunda llamada para obtener la información del perfil
+        const respuestaPerfil = await axios.get(`${API_URL}/usuarios/perfil/`);
+
+        if (respuestaPerfil.data) {
+          // Guardamos los datos completos del usuario
+          setUsuario(respuestaPerfil.data);
+          localStorage.setItem("condominio_usuario", JSON.stringify(respuestaPerfil.data));
+          return true;
         }
-        
-        return true;
       }
       return false;
 
     } catch (error) {
-      // Si el backend devuelve un error (ej. 401 credenciales incorrectas)
-      console.error("Error en el inicio de sesión:", error.response?.data?.message || error.message);
+      console.error("Error en el inicio de sesión:", error.response?.data || error.message);
+      // Limpiamos cualquier dato viejo si el login falla
+      cerrarSesion(); 
       return false;
     }
   };
@@ -59,7 +59,7 @@ export function AuthProvider({ children }) {
   const cerrarSesion = () => {
     setUsuario(null);
     localStorage.removeItem("condominio_usuario");
-    localStorage.removeItem("condominio_token"); // También borramos el token
+    localStorage.removeItem("condominio_token");
     delete axios.defaults.headers.common['Authorization'];
   };
 
